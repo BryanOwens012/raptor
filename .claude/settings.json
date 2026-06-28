@@ -20,6 +20,8 @@
       "Bash(libexec/raptor-agentic *)",
       "Bash(libexec/raptor-build-checklist *)",
       "Bash(libexec/raptor-coverage-summary *)",
+      "Bash(libexec/raptor-install-deps)",
+      "Bash(libexec/raptor-install-deps *)",
       "Bash(libexec/raptor-normalize-context-map *)",
       "Bash(libexec/raptor-project-manager *)",
       "Bash(libexec/raptor-render-diagrams *)",
