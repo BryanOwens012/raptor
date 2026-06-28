@@ -22,6 +22,7 @@ from __future__ import annotations
 import functools
 import json
 import os
+import shutil
 import socket
 import subprocess
 import time
@@ -84,38 +85,55 @@ def _health_model() -> str:
 def probe_anthropic() -> HealthResult:
     """Anthropic: 1-token message to prove reachability.
 
-    Skips when no auth is available — accepts either ``ANTHROPIC_API_KEY``
-    or the dispatcher route (``RAPTOR_LLM_SOCKET`` set) as a valid
-    auth path, matching the resolution in :mod:`cve_diff.llm.auth`.
-    Other providers (Gemini, OpenAI, ...) are not probed here yet —
-    when an operator runs cve-diff with ``--model gemini-2.5-pro``
-    and no Anthropic auth, the agent loop's resolver picks Gemini
-    cleanly; this health probe is informational, not gating.
+    Accepts any of three auth paths, matching the resolution in
+    :mod:`cve_diff.llm.auth` (which falls through to ``claudecode`` when
+    no key/dispatcher is present):
+
+      * ``ANTHROPIC_API_KEY`` — probed directly with a 1-token message.
+      * the dispatcher route (``RAPTOR_LLM_SOCKET`` set) — surfaced
+        healthy without an upstream probe.
+      * the **Claude Code subscription** (``claude`` on PATH, or running
+        inside Claude Code via ``CLAUDECODE``) — cve-diff runs on the
+        operator's Claude Code OAuth login with NO API key, so a missing
+        ``ANTHROPIC_API_KEY`` must NOT read as a critical failure here.
+
+    Only when none of the three exists is this reported unhealthy. Other
+    providers (Gemini, OpenAI, ...) are not probed here yet — when an
+    operator runs cve-diff with ``--model gemini-2.5-pro`` and no
+    Anthropic auth, the agent loop's resolver picks Gemini cleanly; this
+    health probe is informational, not gating.
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     via_dispatcher = bool(os.environ.get("RAPTOR_LLM_SOCKET"))
-    if not api_key and not via_dispatcher:
+    # Claude Code subscription: the `claude` CLI authenticated via the
+    # operator's subscription login (no API key, no metered billing) — the
+    # default LLM path. ``resolve_auth`` returns provider="claudecode" for
+    # exactly this case, so the readiness check has to honour it too.
+    via_claude_code = bool(os.environ.get("CLAUDECODE")) or shutil.which("claude") is not None
+    if not api_key and not via_dispatcher and not via_claude_code:
         # Phrasing keeps the historical "ANTHROPIC_API_KEY not set"
         # substring so existing test fixtures + scripts grepping for
-        # it still match; the credential-isolation hint is appended
-        # so operators with a dispatcher know the alternative.
+        # it still match; the alternative auth paths are spelled out
+        # so operators know a key isn't actually mandatory.
         return HealthResult(
             "Anthropic API", False, 0,
             detail=(
-                "ANTHROPIC_API_KEY not set (or run with "
-                "RAPTOR_LLM_SOCKET for credential-isolation dispatcher)"
+                "ANTHROPIC_API_KEY not set (or run inside Claude Code / "
+                "with RAPTOR_LLM_SOCKET for the credential-isolation "
+                "dispatcher)"
             ),
         )
     if not api_key:
-        # Dispatcher route — the API call would succeed via
-        # dispatcher-injected headers, but we can't probe upstream
-        # from this layer without setting up an httpx UDS client.
-        # Surface as healthy + dispatcher-noted so operators see
-        # auth is wired up.
-        return HealthResult(
-            "Anthropic API", True, 0,
-            detail="auth via credential-isolation dispatcher",
+        # No API key, but auth is wired up another way — the actual call
+        # would succeed via dispatcher-injected headers or the Claude Code
+        # subprocess. We can't cheaply probe upstream from this layer, so
+        # surface healthy + note which path is in use.
+        detail = (
+            "auth via credential-isolation dispatcher"
+            if via_dispatcher
+            else "auth via Claude Code subscription (no API key needed)"
         )
+        return HealthResult("Anthropic API", True, 0, detail=detail)
     start = time.monotonic()
     body = json.dumps({"model": _health_model(), "max_tokens": 1,
                        "messages": [{"role": "user", "content": "x"}]}).encode()

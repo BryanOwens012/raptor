@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# raptor-install-deps — check RAPTOR's external tool dependencies and
+# install any that are missing, preferring Homebrew.
+#
+# This fork targets macOS + Homebrew. The script is idempotent: it only
+# installs what is actually missing, so it is cheap to run on every
+# session start (the common case is "all present" → a few `command -v`
+# checks and an immediate exit).
+#
+# Install methods, by tool:
+#   coccinelle (spatch) → brew formula
+#   jadx                → brew formula
+#   semgrep             → brew formula
+#   afl++ / gdb         → brew formula
+#   codeql              → brew cask (no core formula exists)
+#   frida / frida-trace → pipx (frida-tools; not in Homebrew core)
+#   tree-sitter (py)    → pip grammars (Python bindings, not a brew pkg)
+#   rr                  → SKIPPED on macOS (Linux-only: needs perf counters)
+#
+# Usage:
+#   libexec/raptor-install-deps           # install whatever is missing
+#   libexec/raptor-install-deps --check   # report only; install nothing
+set -u
+
+CHECK_ONLY=0
+[ "${1:-}" = "--check" ] && CHECK_ONLY=1
+
+installed=()
+skipped=()
+missing=()   # in --check mode: what WOULD be installed
+failed=()
+
+note()    { printf '  %s\n' "$*"; }
+have()    { command -v "$1" >/dev/null 2>&1; }
+
+# --- platform / brew preconditions ------------------------------------
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "raptor-install-deps: not macOS — this fork's auto-installer is brew-first."
+  echo "  On Linux use the devcontainer or your distro's package manager."
+  exit 0
+fi
+if ! have brew; then
+  echo "raptor-install-deps: Homebrew not found. Install it first:"
+  echo '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+  exit 1
+fi
+
+# install_if_missing <probe-binary> <human-name> <install-words...>
+install_if_missing() {
+  local probe="$1" name="$2"; shift 2
+  if have "$probe"; then skipped+=("$name"); return 0; fi
+  if [ "$CHECK_ONLY" = 1 ]; then missing+=("$name"); return 0; fi
+  note "installing $name ..."
+  if "$@" >/dev/null 2>&1; then installed+=("$name"); else failed+=("$name"); fi
+}
+
+echo "raptor-install-deps: checking tool dependencies (brew-first)..."
+
+# --- brew formulae -----------------------------------------------------
+install_if_missing spatch   coccinelle  brew install coccinelle
+install_if_missing jadx     jadx        brew install jadx
+install_if_missing semgrep  semgrep     brew install semgrep
+install_if_missing afl-fuzz "afl++"     brew install afl++
+install_if_missing gdb      gdb         brew install gdb
+
+# --- brew cask ---------------------------------------------------------
+install_if_missing codeql   codeql      brew install --cask codeql
+
+# --- pipx (frida-tools ships both frida and frida-trace) ---------------
+if have frida && have frida-trace; then
+  skipped+=("frida"); skipped+=("frida-trace")
+elif [ "$CHECK_ONLY" = 1 ]; then
+  missing+=("frida-tools (frida, frida-trace)")
+elif have pipx; then
+  note "installing frida-tools (frida, frida-trace) via pipx ..."
+  if pipx install frida-tools >/dev/null 2>&1; then
+    installed+=("frida-tools")
+  else failed+=("frida-tools"); fi
+else
+  failed+=("frida-tools (pipx not found — 'brew install pipx')")
+fi
+
+# --- tree-sitter Python bindings + grammars (RAPTOR inventory) ---------
+# The banner's "lang: tree-sitter" check is the Python `tree_sitter`
+# import, NOT a brew CLI. Install the bindings + the language grammars
+# RAPTOR loads, into the same interpreter `python3 raptor.py` uses.
+if python3 -c "import tree_sitter" >/dev/null 2>&1; then
+  skipped+=("tree-sitter (python)")
+elif [ "$CHECK_ONLY" = 1 ]; then
+  missing+=("tree-sitter (python bindings + grammars)")
+else
+  note "installing tree-sitter Python bindings + grammars via pip ..."
+  if python3 -m pip install --user --break-system-packages \
+        tree-sitter tree-sitter-python tree-sitter-java tree-sitter-javascript \
+        tree-sitter-c tree-sitter-cpp tree-sitter-go tree-sitter-lua \
+        tree-sitter-typescript tree-sitter-php >/dev/null 2>&1; then
+    installed+=("tree-sitter (python)")
+  else failed+=("tree-sitter (python)"); fi
+fi
+
+# --- rr: Linux-only ----------------------------------------------------
+have rr || skipped+=("rr (Linux-only; not available on macOS)")
+
+# --- summary -----------------------------------------------------------
+echo
+if [ "$CHECK_ONLY" = 1 ]; then
+  if [ "${#missing[@]}" -eq 0 ]; then
+    echo "All installable dependencies present. ✓"
+  else
+    echo "Missing (would install): ${missing[*]}"
+  fi
+  exit 0
+fi
+[ "${#installed[@]}" -gt 0 ] && echo "Installed: ${installed[*]}"
+[ "${#skipped[@]}"   -gt 0 ] && echo "Already present: ${skipped[*]}"
+if [ "${#failed[@]}" -gt 0 ]; then
+  echo "Failed (install manually): ${failed[*]}" >&2
+  exit 1
+fi
+echo "Dependencies satisfied. ✓"

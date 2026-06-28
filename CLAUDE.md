@@ -10,8 +10,19 @@ Dangerous operations (apply patches, delete, git push): ASK FIRST.
 **On first message:**
 VERY IMPORTANT: follow these steps in order.
 1. Read `.startup-output` using the Read tool, then output its contents verbatim as a fenced code block (``` with no language tag). Do NOT paraphrase or reformat. (The SessionStart hook generates this file automatically before your first message.)
-2. On a single line, output "Quick commands:" then list the /agentic, /scan, /fuzz, /web commands (don't explain what they do) and note /commands for the full list.
-3. If the `sage_inception` tool is present in your available MCP tools, load `core/sage/CLAUDE.md` (persistent-memory workflow). If absent, SAGE is not installed — skip silently and do not mention it.
+2. Check and install missing tool dependencies: run `libexec/raptor-install-deps` (idempotent and Homebrew-first — fast when nothing is missing, installs only what is absent). Briefly report anything it installed; if everything was already present, say so in one line and move on. (`rr` is Linux-only and is skipped on macOS — do not treat its absence as a failure.)
+3. On a single line, output "Quick commands:" then list the /agentic, /scan, /fuzz, /web commands (don't explain what they do) and note /commands for the full list.
+4. If the `sage_inception` tool is present in your available MCP tools, load `core/sage/CLAUDE.md` (persistent-memory workflow). If absent, SAGE is not installed — skip silently and do not mention it.
+
+---
+
+## OUTPUT & SCRATCH DIRECTORIES
+
+Three gitignored, top-level folders separate concerns. Never commit their contents (private analysis targets and PII must never reach version control):
+
+- `out/` — RAPTOR run artifacts (JSON, SARIF, machine-readable). Managed by the run lifecycle; do not hand-write here.
+- `scratch/` — copied-over repos, triage notes, and ad-hoc / in-progress working files. Put any cloned-or-copied target repo here.
+- `reports/` — your final, clean, human-readable, **actionable** deliverables. When you produce a polished summary/report a human will read (triage write-up, security report, decision doc), write it under `reports/` so there is one clean, cat-ready copy outside the machine artifacts.
 
 ---
 
@@ -49,6 +60,8 @@ When a `/command` fires:
 **Coverage:** When asked about coverage, run `libexec/raptor-coverage-summary` (no args = active project). Use `--detailed` for per-file table, `--gaps` for unreviewed functions. See `.claude/skills/coverage.md` for mark/unmark and the full API.
 
 **Note:** `/agentic` runs scan → dedup → prep → analysis (with validation methodology). Use `--sequential` to bypass parallel orchestration. Use `--understand` to pre-map the codebase before scanning, and `--validate` to run the full validation pipeline on exploitable findings afterwards. Both flags are opt-in. Multi-model: `--model` is repeatable — multiple models each independently analyse every finding, then results are correlated; `--consensus`, `--judge`, and `--aggregate` add optional review/synthesis models.
+
+**Analysis engine (this fork):** when `/agentic` runs inside an interactive Claude Code session, the pipeline stops after prep and hands the prepared findings back to the session, which analyses them with its own subagents on the **Claude Code subscription** — never a `claude -p` subprocess, never a metered API key. After analysing, write the final clean, human-readable report to `reports/` (see OUTPUT & SCRATCH DIRECTORIES). With no Claude Code session present, it falls back to the best locally-installed Ollama model.
 /crash-analysis - Autonomous crash root-cause analysis (see below)
 /oss-forensics - GitHub forensic investigation (see below)
 /scorecard - Inspect per-model reliability across decision classes; ask natural-language questions about which model is good at what (see below)

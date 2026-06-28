@@ -35,7 +35,9 @@
 
 **Licence:** MIT, see LICENSE. Note that CodeQL has its own licence and does not permit commercial use.
 
-**Repository:** https://github.com/gadievron/raptor
+**Upstream repository:** https://github.com/gadievron/raptor
+
+**This fork:** https://github.com/BryanOwens012/raptor — tuned for **macOS** and the **Claude Code subscription** (no API key, no local-model dependence). See [About this fork](#about-this-fork).
 
 ---
 
@@ -49,29 +51,71 @@ RAPTOR stands for Recursive Autonomous Penetration Testing and Observation Robot
 
 ---
 
+## About this fork
+
+This is a fork of [gadievron/raptor](https://github.com/gadievron/raptor), tuned for one specific setup: running on **macOS** with the **Claude Code subscription** as the analysis engine — *not* a metered Anthropic API key and *not* local LLM models. All upstream credit belongs to the original authors; this fork only changes how RAPTOR boots and which model performs the analysis.
+
+**Optimised for macOS (not Linux).** Upstream's sandbox is Linux-first. This fork fixes the macOS **Seatbelt** sandbox profile so the bundled scanners actually run: the profile now permits writing the standard character devices (`/dev/null`, `/dev/zero`, …) that `subprocess`-spawning tools require. Without it, every Semgrep pack and CodeQL database build failed under the sandbox with `Operation not permitted: '/dev/null'` (Semgrep's `semgrep-core` RPC and CodeQL's autobuild both open `/dev/null` with `O_RDWR`).
+
+**Optimised for the Claude Code subscription (not API billing, not local models).** When an interactive Claude Code session drives a run, the autonomous pipeline scans and prepares findings, then **hands them back to that session** to analyse with its own subagents — on your Claude Pro/Max subscription. It never shells out to a `claude -p` subprocess and never falls through to a metered Anthropic API key. Specifically:
+
+- **Default = your subscription.** Analysis runs as in-session subagents; no API key needed and none billed.
+- **Fallback = best local Ollama model.** With no Claude Code session present, it falls back to the strongest locally-installed Ollama model, auto-selected for code-reasoning strength (code-specialised models preferred, vision/multimodal variants avoided) — never a paid cloud API.
+- **Subscription gate.** RAPTOR warns when `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, or `CLAUDE_CODE_USE_VERTEX` are set, since any of these divert billing away from your subscription (an API key takes precedence over the subscription once present).
+- **Boots without an API key.** Readiness/health checks recognise the Claude Code subscription as a valid LLM, so a missing `ANTHROPIC_API_KEY` is no longer a critical startup failure.
+
+**Dependencies auto-install on startup.** On the first message of a session, RAPTOR runs `libexec/raptor-install-deps`, which checks every external tool (Semgrep, CodeQL, Coccinelle, jadx, Frida, the tree-sitter Python grammars, …) and installs whatever is missing — **Homebrew-first** (`brew install`, with a cask for CodeQL, `pipx` for Frida, and `pip` for the tree-sitter bindings). It is idempotent and fast when nothing is missing, and skips `rr` (Linux-only). Run it yourself any time with `libexec/raptor-install-deps` (or `--check` to report without installing).
+
+**Gitignored local directories.** Three top-level folders keep private data out of version control:
+
+| Folder | Holds |
+|--------|-------|
+| `out/` | RAPTOR run artifacts (JSON, SARIF, machine-readable) |
+| `scratch/` | copied-over repos, triage notes, ad-hoc / in-progress work |
+| `reports/` | Claude Code's final, clean, human-readable deliverables |
+
+All three are gitignored (`reports/` keeps only its README), so cloned/copied analysis targets and report contents never risk landing in version control.
+
+**`.claude/raptor.env`.** RAPTOR's session-init regenerates this gitignored file each startup with `RAPTOR_DIR` and `PATH`; Claude Code loads it into the session via the `CLAUDE_ENV_FILE` setting in `.claude/settings.json`. Because it is overwritten every launch, it is not a place for durable custom config — set per-machine values (e.g. a remote `OLLAMA_HOST`) in your shell profile instead.
+
+Everything else — the command surface, the validation methodology, the docs — is unchanged from upstream and documented in the sections below.
+
+---
+
 ## Quick Start
 
-### Option 1: Install manually
+### Option 1: Install manually (macOS)
+
+This fork targets macOS with Homebrew. No `ANTHROPIC_API_KEY` is needed — RAPTOR runs on your Claude Code subscription.
 
 ```bash
-# Clone the repo
-git clone https://github.com/gadievron/raptor.git
+# Clone the fork
+git clone https://github.com/BryanOwens012/raptor.git
 cd raptor
 
 # Install Python dependencies
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 
-# Install Claude Code (required)
+# Install Claude Code, then sign in with your subscription (not an API key)
 npm install -g @anthropic-ai/claude-code
+claude   # run /login once and choose your Claude Pro/Max subscription
 
-# Install Semgrep (required for scanning)
-pip install semgrep
+# Security tools (Semgrep, CodeQL, Coccinelle, jadx, Frida, tree-sitter
+# grammars) — Homebrew-first, installs only what's missing. RAPTOR also
+# runs this automatically on the first message of every session.
+libexec/raptor-install-deps
 
 # Open RAPTOR
 claude
 ```
 
-### Option 2: Devcontainer (recommended)
+> The tree-sitter dependency RAPTOR needs is the **Python** binding + language grammars (installed by `raptor-install-deps` via `pip`), not the `brew install tree-sitter` CLI. Let the installer handle it.
+
+> Do **not** set `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_BEDROCK` / `CLAUDE_CODE_USE_VERTEX`) — any of these divert billing to a pay-as-you-go plan instead of your subscription. RAPTOR will warn you if it detects them.
+
+### Option 2: Devcontainer (Linux / upstream path)
+
+> This fork is tuned for the native macOS path above; the devcontainer is the upstream Linux environment, kept for completeness (e.g. if you want `rr`, which is Linux-only).
 
 Everything pre-installed. Open in VS Code with **Dev Containers: Open Folder in Container**, or pull the prebuilt image:
 

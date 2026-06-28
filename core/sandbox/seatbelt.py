@@ -111,6 +111,21 @@ def _quote_sbpl(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+# Curated set of character devices that runtime machinery opens O_RDWR
+# (Python subprocess child-stdio wiring, semgrep-core RPC, CodeQL
+# autobuild). They are pure sinks/sources — writing to them carries no
+# isolation risk — so they are re-allowed for write after the write-deny
+# clause, and read-allowed under restrict_reads. Single source of truth
+# for both the read and write device allowlists.
+WRITABLE_DEV_FILES = (
+    "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom",
+    "/dev/full", "/dev/tty",
+    # /dev/dtracehelper is consulted by libsystem's malloc initialiser
+    # on some macOS versions; allowing it stops spurious deny-spam.
+    "/dev/dtracehelper",
+)
+
+
 def build_profile(*,
                   target: Optional[str] = None,
                   output: Optional[str] = None,
@@ -254,6 +269,22 @@ def build_profile(*,
                 f"(deny file-write* (require-not (require-any "
                 f"{subpath_any})))"
             )
+            # Re-allow the small curated set of write-safe character
+            # devices AFTER the deny (SBPL is last-match-wins). These are
+            # opened O_RDWR by ordinary runtime machinery — Python's
+            # ``subprocess`` opens ``/dev/null`` O_RDWR to wire up child
+            # stdio, and semgrep 1.168+ does exactly this when spawning
+            # its ``semgrep-core`` RPC validator. ``/dev/null`` is not in
+            # write_exceptions (that list is subpath-based for real
+            # directories), so the deny above would block the open and the
+            # tool fatal-exits with an opaque "Operation not permitted:
+            # '/dev/null'". The same devices are already read-allowed under
+            # restrict_reads (SYSTEM_READ_DEV_FILES); writing to a
+            # null/zero/tty sink carries no isolation risk. One allow per
+            # device (literal, last-match-wins) cleanly overrides the deny
+            # for just these paths without widening the write surface.
+            for _dev in WRITABLE_DEV_FILES:
+                parts.append(f"(allow file-write* (literal {_quote_sbpl(_dev)}))")
 
     # --- Filesystem read restriction (only when explicitly requested) ---
     if restrict_reads:
@@ -290,14 +321,9 @@ def build_profile(*,
         # cross-process-readable for same-UID processes). Specific
         # /dev files needed for normal program startup are granted
         # individually below.
-        SYSTEM_READ_DEV_FILES = (
-            "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom",
-            "/dev/full", "/dev/tty",
-            # /dev/dtracehelper is consulted by libsystem's malloc
-            # initialiser on some macOS versions; allowing it stops
-            # spurious deny-spam in audit mode.
-            "/dev/dtracehelper",
-        )
+        # Same curated character-device set the write path re-allows —
+        # single source of truth in WRITABLE_DEV_FILES (module level).
+        SYSTEM_READ_DEV_FILES = WRITABLE_DEV_FILES
         # The root directory `/` itself is needed by dyld during image
         # loading — it opens `/` for read as part of path walk
         # canonicalisation. `(subpath "/usr")` allows everything UNDER
