@@ -1,9 +1,20 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "cleanupPeriodDays": 99999,
   "env": {
     "CLAUDE_ENV_FILE": ".claude/raptor.env",
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
-    "BASH_DEFAULT_TIMEOUT_MS": "300000"
+    "BASH_DEFAULT_TIMEOUT_MS": "600000",
+    "BASH_MAX_TIMEOUT_MS": "1800000"
   },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "model": "opus[1m]",
+  "alwaysThinkingEnabled": true,
+  "effortLevel": "high",
+  "skipAutoPermissionPrompt": true,
   "permissions": {
     "allow": [
       "Bash(libexec/raptor-agentic *)",
@@ -23,7 +34,8 @@
       "Bash(libexec/raptor-validation-helper *)",
       "Write(/out/**)",
       "Edit(/out/**)"
-    ]
+    ],
+    "defaultMode": "auto"
   },
   "hooks": {
     "SessionStart": [
