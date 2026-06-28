@@ -324,20 +324,54 @@ def _build_openai_compat_config(provider_name: str) -> Optional['ModelConfig']:
     )
 
 
+def _ollama_param_billions(name: str) -> float:
+    """Parse the parameter count (in billions) from an Ollama tag such as
+    ``qwen2.5-coder:7b`` / ``llama3.2:3b`` / ``phi3:3.8b`` / ``...:1.5b``.
+    Returns 0.0 when no ``<n>b`` token is present so size-less tags rank
+    last on the tie-breaker rather than spuriously winning."""
+    import re
+    m = re.search(r'(\d+(?:\.\d+)?)\s*b\b', name.lower())
+    return float(m.group(1)) if m else 0.0
+
+
+def _score_ollama_model(name: str) -> tuple:
+    """Rank a locally-installed Ollama model by expected intelligence for
+    security CODE analysis (higher tuple sorts better). Ollama exposes no
+    capability metadata, so this is a deliberate heuristic:
+
+      * Vision / multimodal variants sort to the BOTTOM. They trade
+        language/code reasoning for image tokens, and on at least one
+        host (Apple Silicon) ``qwen2.5vl`` crashes llama.cpp
+        (``GGML_ASSERT``) under structured-output load — useless for the
+        JSON-emitting analysis path.
+      * Code-specialised models are PREFERRED — at a given size they
+        dominate code-reasoning benchmarks (Qwen2.5-Coder-7B beats
+        CodeStral-22B / DS-Coder-33B on CRUXEval).
+      * Larger parameter counts break ties.
+    """
+    low = name.lower()
+    is_vision = any(t in low for t in ("vl:", "vl-", "-vl", "vision", "llava", "minicpm-v", "-v:"))
+    is_code = any(t in low for t in ("coder", "codellama", "deepseek-coder", "-code", "code-"))
+    return (
+        0 if is_vision else 1,   # vision models last
+        1 if is_code else 0,     # code-specialised models preferred
+        _ollama_param_billions(low),  # then by parameter count
+    )
+
+
 def _build_ollama_config() -> Optional['ModelConfig']:
     from core.config import RaptorConfig
     ollama_models = _get_available_ollama_models()
     if not ollama_models:
         return None
-    preferred = ['mistral', 'qwen', 'codellama', 'llama', 'gemma', 'deepseek-coder', 'deepseek']
-    selected_model = ollama_models[0]
-    for pref in preferred:
-        for model in ollama_models:
-            if pref in model.lower():
-                selected_model = model
-                break
-        if selected_model != ollama_models[0]:
-            break
+    # Pick the highest-intelligence locally-installed model for code
+    # analysis (see _score_ollama_model). max() is stable on ties, so
+    # equal-scored models keep Ollama's listing order.
+    selected_model = max(ollama_models, key=_score_ollama_model)
+    logger.info(
+        f"Ollama autodetect: selected '{selected_model}' as the highest-"
+        f"intelligence local model from {ollama_models}"
+    )
     ollama_base = _validate_ollama_url(RaptorConfig.OLLAMA_HOST)
     # Look up the actual limits when known. Pre-fix the log claimed
     # "using defaults (max_context=32000, max_output=4096)" but the
@@ -473,16 +507,20 @@ _PROVIDER_BUILDERS = {
     "claudecode": _build_claudecode_config,
 }
 
-# Default order. Anthropic first (cache-control + task-budget beta —
-# the only provider where those matter natively).  Bedrock surfaces
-# after the direct cloud providers — operators who opt-in to Bedrock
-# explicitly via ``AWS_BEARER_TOKEN_BEDROCK`` will hit it before the
-# autodetect falls through to Ollama / Claude Code.  Ollama before
-# claudecode because Ollama is a deliberate operator setup; CC is the
-# absolute last resort.
+# Default order. Ollama FIRST so zero-config autodetect prefers the
+# free, local model (the best locally-installed one — see
+# ``_build_ollama_config``) over any metered cloud API. The direct cloud
+# providers (Anthropic/OpenAI/Gemini/Mistral) and Bedrock are API-billed
+# and follow. ``claudecode`` (the ``claude -p`` subprocess) stays LAST as
+# an absolute last resort for headless non-Ollama hosts — note the
+# /agentic flow never reaches it: when an interactive Claude Code session
+# orchestrates, analysis is handed back to that session (prep-only +
+# subagents, on the operator's subscription, no metered API), and
+# otherwise it falls back to this Ollama-first autodetect.
 _DEFAULT_PROVIDER_ORDER = (
+    "ollama",
     "anthropic", "openai", "gemini", "mistral", "bedrock",
-    "ollama", "claudecode",
+    "claudecode",
 )
 
 

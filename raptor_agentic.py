@@ -2585,7 +2585,48 @@ Examples:
     # PHASE 4: AGENTIC ORCHESTRATION
     # ========================================================================
     orchestration_result = None
-    if (llm_env.claude_code or llm_env.external_llm) and not args.sequential:
+    # Dispatch policy (operator preference):
+    #   1. DEFAULT — an interactive Claude Code session is orchestrating
+    #      this run (``CLAUDECODE`` set). Do NOT dispatch in-pipeline.
+    #      Phase 3 has written a ``prep_only`` report; hand it back to the
+    #      session, which analyses each finding with its own subagents on
+    #      the operator's Claude subscription. No ``claude -p`` subprocess,
+    #      no metered API billing.
+    #   2. FALLBACK — no interactive session: orchestrate in-pipeline with
+    #      the best local Ollama model (autodetect; see
+    #      ``_build_ollama_config``). ``claude -p`` is force-blocked so the
+    #      agentic flow never shells out to it.
+    in_cc_session = bool(os.environ.get("CLAUDECODE"))
+    run_inpipeline = (
+        llm_env.external_llm and not in_cc_session and not args.sequential
+    )
+    if in_cc_session and not args.sequential:
+        print("\n" + "=" * 70)
+        print("ANALYSING — handed to the orchestrating Claude Code session")
+        print("=" * 70)
+        # Subscription gate (adapted from the bryan-squad check-billing
+        # guard): these env vars divert Claude Code AWAY from the
+        # operator's Pro/Max subscription onto pay-as-you-go API/cloud
+        # billing — and an API key TAKES PRECEDENCE over the subscription
+        # once set. RAPTOR can't change the parent session's billing, but
+        # it can warn loudly so an analysis the operator believes is on
+        # their subscription isn't silently metered.
+        _billing_divert_vars = (
+            "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+            "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+        )
+        _diverts = [v for v in _billing_divert_vars if os.environ.get(v)]
+        if _diverts:
+            print("  ⚠️  Subscription gate: these env vars divert Claude Code billing to a")
+            print(f"      pay-as-you-go API/cloud plan: {', '.join(_diverts)}")
+            print("      Unset them to keep this analysis on your Claude Code subscription.")
+        if analysis_report and analysis_report.exists():
+            print("  Prepared findings handed to this Claude Code session for")
+            print("  subagent analysis (subscription — no claude -p, no API billing).")
+            print(f"  Prep report: {analysis_report}")
+        else:
+            print("\n  No analysis report from Phase 3 — nothing to hand off")
+    elif run_inpipeline:
         print("\n" + "=" * 70)
         print("ANALYSING", flush=True)
         print("=" * 70)
@@ -2614,7 +2655,10 @@ Examples:
                 no_exploits=args.no_exploits,
                 no_patches=args.no_patches,
                 llm_config=llm_config,
-                block_cc_dispatch=block_cc_dispatch,
+                # Force-block claude -p: the agentic flow uses either the
+                # orchestrating CC session (above) or a local Ollama model,
+                # never the metered/subprocess Claude CLI path.
+                block_cc_dispatch=True,
                 accept_weakened_defenses=args.accept_weakened_defenses,
                 dataflow_validation_enabled=not getattr(args, "no_validate_dataflow", False),
                 deep_validate=getattr(args, "deep_validate", False),

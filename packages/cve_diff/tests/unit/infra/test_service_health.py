@@ -76,11 +76,30 @@ def test_has_critical_failure_detects_critical_only() -> None:
     assert has_critical_failure([]) is False
 
 
-def test_probe_anthropic_requires_api_key(monkeypatch) -> None:
+def test_probe_anthropic_unhealthy_when_no_auth_at_all(monkeypatch) -> None:
+    # Unhealthy only when EVERY auth path is absent: no API key, no
+    # dispatcher socket, and no Claude Code subscription (claude not on
+    # PATH, not running inside Claude Code).
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("RAPTOR_LLM_SOCKET", raising=False)
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.setattr(service_health.shutil, "which", lambda _name: None)
     r = service_health.probe_anthropic()
     assert r.ok is False
     assert "ANTHROPIC_API_KEY not set" in r.detail
+
+
+def test_probe_anthropic_accepts_claude_code_subscription(monkeypatch) -> None:
+    # No API key and no dispatcher, but the Claude Code subscription is
+    # available (claude on PATH) — cve-diff runs on it, so the probe must
+    # report healthy rather than demanding ANTHROPIC_API_KEY.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("RAPTOR_LLM_SOCKET", raising=False)
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.setattr(service_health.shutil, "which", lambda name: "/usr/local/bin/claude")
+    r = service_health.probe_anthropic()
+    assert r.ok is True
+    assert "Claude Code subscription" in r.detail
 
 
 def test_probes_tuple_lists_dns_first() -> None:

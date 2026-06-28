@@ -31,3 +31,6 @@ tuning.json
 .sage/
 *.sage.key
 *.gcov
+
+# Local scratch: copied-over repos, triage notes, ad-hoc analysis (never committed)
+scratch/
