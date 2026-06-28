@@ -10,8 +10,19 @@ Dangerous operations (apply patches, delete, git push): ASK FIRST.
 **On first message:**
 VERY IMPORTANT: follow these steps in order.
 1. Read `.startup-output` using the Read tool, then output its contents verbatim as a fenced code block (``` with no language tag). Do NOT paraphrase or reformat. (The SessionStart hook generates this file automatically before your first message.)
-2. On a single line, output "Quick commands:" then list the /agentic, /scan, /fuzz, /web commands (don't explain what they do) and note /commands for the full list.
-3. If the `sage_inception` tool is present in your available MCP tools, load `core/sage/CLAUDE.md` (persistent-memory workflow). If absent, SAGE is not installed — skip silently and do not mention it.
+2. Check and install missing tool dependencies: run `libexec/raptor-install-deps` (idempotent and Homebrew-first — fast when nothing is missing, installs only what is absent). Briefly report anything it installed; if everything was already present, say so in one line and move on. (`rr` is Linux-only and is skipped on macOS — do not treat its absence as a failure.)
+3. On a single line, output "Quick commands:" then list the /agentic, /scan, /fuzz, /web commands (don't explain what they do) and note /commands for the full list.
+4. If the `sage_inception` tool is present in your available MCP tools, load `core/sage/CLAUDE.md` (persistent-memory workflow). If absent, SAGE is not installed — skip silently and do not mention it.
+
+---
+
+## OUTPUT & SCRATCH DIRECTORIES
+
+Three gitignored, top-level folders separate concerns. Never commit their contents (private analysis targets and PII must never reach version control):
+
+- `out/` — RAPTOR run artifacts (JSON, SARIF, machine-readable). Managed by the run lifecycle; do not hand-write here.
+- `scratch/` — copied-over repos, triage notes, and ad-hoc / in-progress working files. Put any cloned-or-copied target repo here.
+- `reports/` — your final, clean, human-readable, **actionable** deliverables. When you produce a polished summary/report a human will read (triage write-up, security report, decision doc), write it under `reports/` so there is one clean, cat-ready copy outside the machine artifacts.
 
 ---
 

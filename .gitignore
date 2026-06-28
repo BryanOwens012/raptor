@@ -34,3 +34,9 @@ tuning.json
 
 # Local scratch: copied-over repos, triage notes, ad-hoc analysis (never committed)
 scratch/
+
+# reports/: Claude Code's final, clean, human-readable deliverables.
+# Contents are never committed; the folder + its README are kept so it
+# exists on clone.
+reports/*
+!reports/README.md

@@ -27,7 +27,17 @@ sys.path.insert(0, str(REPO_ROOT))
 
 
 def write_env_file():
-    """Write the env file with static vars. Overwrites to ensure clean state."""
+    """Write the per-session env file (default ``.claude/raptor.env``).
+
+    The path comes from ``CLAUDE_ENV_FILE`` in ``.claude/settings.json``;
+    Claude Code loads this file into the session environment (and into
+    Bash-tool subprocesses) at startup. RAPTOR (re)generates it here with
+    the static vars below, so it is **gitignored** (machine-specific
+    generated state, not source) and **overwritten every session start**
+    to guarantee a clean slate — do not hand-edit it for persistence, as
+    edits are clobbered on the next launch. Set durable per-machine
+    config (e.g. a remote ``OLLAMA_HOST``) in your shell profile instead.
+    """
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if not env_file:
         return

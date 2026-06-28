@@ -64,7 +64,19 @@ This is a fork of [gadievron/raptor](https://github.com/gadievron/raptor), tuned
 - **Subscription gate.** RAPTOR warns when `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, or `CLAUDE_CODE_USE_VERTEX` are set, since any of these divert billing away from your subscription (an API key takes precedence over the subscription once present).
 - **Boots without an API key.** Readiness/health checks recognise the Claude Code subscription as a valid LLM, so a missing `ANTHROPIC_API_KEY` is no longer a critical startup failure.
 
-**`scratch/` for local data.** A gitignored `scratch/` folder holds copied-over repos, triage notes, and ad-hoc analysis, so private analysis targets never risk landing in version control.
+**Dependencies auto-install on startup.** On the first message of a session, RAPTOR runs `libexec/raptor-install-deps`, which checks every external tool (Semgrep, CodeQL, Coccinelle, jadx, Frida, the tree-sitter Python grammars, …) and installs whatever is missing — **Homebrew-first** (`brew install`, with a cask for CodeQL, `pipx` for Frida, and `pip` for the tree-sitter bindings). It is idempotent and fast when nothing is missing, and skips `rr` (Linux-only). Run it yourself any time with `libexec/raptor-install-deps` (or `--check` to report without installing).
+
+**Gitignored local directories.** Three top-level folders keep private data out of version control:
+
+| Folder | Holds |
+|--------|-------|
+| `out/` | RAPTOR run artifacts (JSON, SARIF, machine-readable) |
+| `scratch/` | copied-over repos, triage notes, ad-hoc / in-progress work |
+| `reports/` | Claude Code's final, clean, human-readable deliverables |
+
+All three are gitignored (`reports/` keeps only its README), so cloned/copied analysis targets and report contents never risk landing in version control.
+
+**`.claude/raptor.env`.** RAPTOR's session-init regenerates this gitignored file each startup with `RAPTOR_DIR` and `PATH`; Claude Code loads it into the session via the `CLAUDE_ENV_FILE` setting in `.claude/settings.json`. Because it is overwritten every launch, it is not a place for durable custom config — set per-machine values (e.g. a remote `OLLAMA_HOST`) in your shell profile instead.
 
 Everything else — the command surface, the validation methodology, the docs — is unchanged from upstream and documented in the sections below.
 
