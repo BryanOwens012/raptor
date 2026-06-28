@@ -100,17 +100,22 @@ pip3 install -r requirements.txt
 npm install -g @anthropic-ai/claude-code
 claude   # run /login once and choose your Claude Pro/Max subscription
 
-# Scanners + analysis tooling via Homebrew
-brew install semgrep coccinelle jadx tree-sitter
-brew install --cask codeql
+# Security tools (Semgrep, CodeQL, Coccinelle, jadx, Frida, tree-sitter
+# grammars) — Homebrew-first, installs only what's missing. RAPTOR also
+# runs this automatically on the first message of every session.
+libexec/raptor-install-deps
 
 # Open RAPTOR
 claude
 ```
 
+> The tree-sitter dependency RAPTOR needs is the **Python** binding + language grammars (installed by `raptor-install-deps` via `pip`), not the `brew install tree-sitter` CLI. Let the installer handle it.
+
 > Do **not** set `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_BEDROCK` / `CLAUDE_CODE_USE_VERTEX`) — any of these divert billing to a pay-as-you-go plan instead of your subscription. RAPTOR will warn you if it detects them.
 
-### Option 2: Devcontainer (recommended)
+### Option 2: Devcontainer (Linux / upstream path)
+
+> This fork is tuned for the native macOS path above; the devcontainer is the upstream Linux environment, kept for completeness (e.g. if you want `rr`, which is Linux-only).
 
 Everything pre-installed. Open in VS Code with **Dev Containers: Open Folder in Container**, or pull the prebuilt image:
 

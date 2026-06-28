@@ -60,6 +60,8 @@ When a `/command` fires:
 **Coverage:** When asked about coverage, run `libexec/raptor-coverage-summary` (no args = active project). Use `--detailed` for per-file table, `--gaps` for unreviewed functions. See `.claude/skills/coverage.md` for mark/unmark and the full API.
 
 **Note:** `/agentic` runs scan → dedup → prep → analysis (with validation methodology). Use `--sequential` to bypass parallel orchestration. Use `--understand` to pre-map the codebase before scanning, and `--validate` to run the full validation pipeline on exploitable findings afterwards. Both flags are opt-in. Multi-model: `--model` is repeatable — multiple models each independently analyse every finding, then results are correlated; `--consensus`, `--judge`, and `--aggregate` add optional review/synthesis models.
+
+**Analysis engine (this fork):** when `/agentic` runs inside an interactive Claude Code session, the pipeline stops after prep and hands the prepared findings back to the session, which analyses them with its own subagents on the **Claude Code subscription** — never a `claude -p` subprocess, never a metered API key. After analysing, write the final clean, human-readable report to `reports/` (see OUTPUT & SCRATCH DIRECTORIES). With no Claude Code session present, it falls back to the best locally-installed Ollama model.
 /crash-analysis - Autonomous crash root-cause analysis (see below)
 /oss-forensics - GitHub forensic investigation (see below)
 /scorecard - Inspect per-model reliability across decision classes; ask natural-language questions about which model is good at what (see below)
